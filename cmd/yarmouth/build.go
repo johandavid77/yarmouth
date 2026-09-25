@@ -9,6 +9,7 @@ import (
 
 	"yarmouth/internal/archive"
 	"yarmouth/internal/metadata"
+	"yarmouth/internal/recipe"
 )
 
 func runBuild(args []string, stdout, stderr io.Writer) int {
@@ -16,14 +17,16 @@ func runBuild(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	manifest := fs.String("manifest", "", "manifest del paquete (INI) con pkgname, pkgver, buildid y arch")
 	destdir := fs.String("destdir", "", "directorio con los archivos a empaquetar (DESTDIR)")
+	recipeFile := fs.String("recipe", "", "receta .yarmouth que construye el paquete desde el codigo fuente")
 	out := fs.String("out", ".", "directorio donde escribir el paquete")
 	preInstall := fs.String("pre-install", "", "hook opcional que se ejecuta antes de instalar")
 	postInstall := fs.String("post-install", "", "hook opcional que se ejecuta despues de instalar")
 	preRemove := fs.String("pre-remove", "", "hook opcional que se ejecuta antes de desinstalar")
 	postRemove := fs.String("post-remove", "", "hook opcional que se ejecuta despues de desinstalar")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "construye un paquete .yrm desde un DESTDIR")
+		fmt.Fprintln(stderr, "construye un paquete .yrm: desde un DESTDIR o desde una receta .yarmouth")
 		fmt.Fprintln(stderr, "\nUso: yarmouth build -manifest <manifest> -destdir <dir> [opciones]")
+		fmt.Fprintln(stderr, "     yarmouth build -recipe <receta.yarmouth> [-out <dir>]")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -32,6 +35,19 @@ func runBuild(args []string, stdout, stderr io.Writer) int {
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "yarmouth build: argumentos de mas: %v\n", fs.Args())
 		return 2
+	}
+	if *recipeFile != "" {
+		if *manifest != "" || *destdir != "" {
+			fmt.Fprintln(stderr, "yarmouth build: -recipe es excluyente con -manifest/-destdir")
+			return 2
+		}
+		artifact, err := recipe.Build(*recipeFile, *out)
+		if err != nil {
+			fmt.Fprintf(stderr, "yarmouth build: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "%s\n", filepath.Base(artifact))
+		return 0
 	}
 	if *manifest == "" || *destdir == "" {
 		fs.Usage()

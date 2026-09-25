@@ -3,9 +3,9 @@
 Gestor de paquetes para sistemas Linux From Scratch (LFS), escrito en **Go**.
 
 Yarmouth usa un modelo híbrido: paquetes binarios `.yrm` (tar.xz con manifiesto y
-verificación criptográfica) servidos desde repositorios remotos, y (en desarrollo)
-recetas de construcción desde el código fuente. Funciona tanto dentro de un chroot
-en construcción como en un sistema arrancado.
+verificación criptográfica) servidos desde repositorios remotos, y recetas
+`.yarmouth` que construyen esos paquetes desde el código fuente. Funciona tanto
+dentro de un chroot en construcción como en un sistema arrancado.
 
 Inspirado en `dnf`, `xbps` y `pkg`; diseñado para un solo usuario, sin `systemd`,
 sencillo y auditable.
@@ -22,9 +22,9 @@ sencillo y auditable.
 | 2 | Repositorios remotos, `sync`, instalación por nombre con verificación sha256 | ✅ |
 | 3 | Resolución de dependencias, `upgrade`, `world` / `auto` | ✅ |
 | 4 | Firmas ed25519, verificación al instalar, `query` / `check` | ✅ |
-| 5 | Recetas de construcción (bash → YAML) | ⏳ siguiente |
+| 5 | Recetas de construcción (`.yarmouth`, bash → YAML) | ✅ |
 
-Versión actual: **0.4.0**.
+Versión actual: **0.5.0**.
 
 ## Requisitos
 
@@ -71,12 +71,50 @@ yarmouth query -r /mnt/lfs app     # detalles de un paquete instalado
 yarmouth check -r /mnt/lfs         # verifica la integridad de lo instalado
 ```
 
+## Recetas de construcción (`.yarmouth`)
+
+Una receta declara las fuentes (con su sha256) y los pasos bash para preparar,
+compilar e instalar:
+
+```sh
+pkgname = app
+pkgver = 1.0
+buildid = 1
+arch = x86_64
+description = una aplicacion cualquiera
+license = MIT
+homepage = https://...
+sources = https://.../app-1.0.tar.gz
+sha256 = 32caracteres-hex-por-fuente...
+prepare = autoreconf -i            # opcional, en el srcdir
+build = ./configure --prefix=/usr  # cada linea es una instruccion
+build = make
+install = make install DESTDIR=$DESTDIR
+post-install = echo 'app lista'   # hooks opcionales (pre-install, ...)
+```
+
+Construcción (descarga, verifica sha256, ejecuta los pasos y produce el `.yrm`):
+
+```sh
+yarmouth build -recipe pkg.yarmouth -out repo
+```
+
+- Cada fuente requiere un `sha256`; el descenso falla si no coincide.
+- Soporta archivos locales/URLs y tarballs (`.tar`, `.gz`, `.xz`, `.bz2`,
+  `.zip`); si el tarball deja un único directorio, ese es el `srcdir`.
+- Variables disponibles en los pasos: `SRCDIR`, `SRCROOT`, `DESTDIR`, `PREFIX`
+  (=/usr), `PKGNAME`, `PKGVER`, `BUILDID`, `ARCH`. Los pasos corren con bash
+  (`set -e`) en `$SRCDIR`, el `install` escribe en `$DESTDIR`.
+- Las rutas de fuente relativas se resuelven respecto a la receta; los hashes y
+  la salida son reproducibles (uid/gid=0, mtime=0).
+
 ## Firmas ed25519
 
 Flujo del publicador:
 
 ```sh
-yarmouth keygen -out mantenedor.key          # imprime la clave publica en hex
+yarmouth keygen -out mantenedor.key          # guarda la privada, imprime la publica
+yarmouth pubkey mantenedor.key               # re-imprime la publica cuando se precise
 yarmouth sign -k mantenedor.key app-1.0-1.x86_64.yrm   # firma embebida en el .yrm
 yarmouth index -dir repo -out repo/repodata
 yarmouth sign -k mantenedor.key repo/repodata          # crea repodata.sig
@@ -184,21 +222,23 @@ como `auto` las dependencias nuevas.
 
 ```
 cmd/yarmouth/        CLI: build, index, repo, sync, install, remove, list, upgrade,
-                     keygen, key, sign, query, check
+                     keygen, key, pubkey, sign, query, check
 internal/archive/    formato .yrm (crear/abrir/verificar/extraer, reproducible)
 internal/metadata/   manifiesto INI estricto
 internal/version/    comparación de versiones estilo Debian
+internal/recipe/     recetas .yarmouth: fuentes, sha256 y pasos de construcción
 internal/repo/       índice repodata y repositorios remotos (sync/resolver/descargar)
 internal/resolve/    plan de instalación: dependencias, ciclos, upgrade
 internal/sig/        claves ed25519 y keyring de confianza (trusted-keys)
 internal/db/         inventario pkgdb.json
 internal/install/    instalación/eliminación con hooks, rollback y autoremove
-examples/hellopkg/   paquete de ejemplo con hooks de instalación/eliminación
+examples/hellopkg/   paquete construido con manifest + DESTDIR
+examples/receta/     paquete construido desde una receta .yarmouth
 ```
 
 ## Roadmap
 
-- **Fase 5** — recetas de construcción del paquete desde el código fuente.
+- **Fase 6** — recetas declarativas (YAML), caché de fuentes y construcción en chroot.
 
 ## Licencia
 

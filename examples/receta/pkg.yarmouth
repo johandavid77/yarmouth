@@ -1,0 +1,12 @@
+# receta de ejemplo: construye el paquete saludo desde una fuente local
+pkgname = saludo
+pkgver = 1.0
+buildid = 1
+arch = x86_64
+description = saluda desde una receta .yarmouth
+license = MIT
+sources = src/hello.sh
+sha256 = b4cf4f27c0a982cb78cab770c344f552efba8ae713f699d8a08c8330d90de496
+build = sed -i "s/hola desde la receta de yarmouth/hola desde la receta de yarmouth (construido en $(date +%Y))/" $SRCDIR/hello.sh
+post-install = echo 'saludo instalado!'
+install = install -Dm755 $SRCDIR/hello.sh $DESTDIR/usr/bin/saludo

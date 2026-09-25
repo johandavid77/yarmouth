@@ -30,6 +30,8 @@ type Manifest struct {
 	DataHash   string
 }
 
+func (m Manifest) Validate() error { return m.validate() }
+
 func (m Manifest) validate() error {
 	if m.Pkgname == "" || m.Pkgver == "" || m.BuildID == "" || m.Arch == "" {
 		return errors.New("manifest incompleto: faltan pkgname, pkgver, buildid o arch")

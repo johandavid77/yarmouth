@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-const version = "0.4.0"
+const version = "0.5.0"
 
 type command struct {
 	name  string
@@ -18,8 +18,8 @@ type command struct {
 var commands = []command{
 	{
 		name:  "build",
-		short: "construye un paquete .yrm desde un DESTDIR",
-		usage: "yarmouth build -manifest <manifest> -destdir <dir> [opciones]",
+		short: "construye un .yrm desde un DESTDIR o una receta",
+		usage: "yarmouth build -recipe <receta.yarmouth> | -manifest <mf> -destdir <dir>",
 		run:   runBuild,
 	},
 	{
@@ -81,6 +81,12 @@ var commands = []command{
 		short: "detalles de un paquete instalado",
 		usage: "yarmouth query -r <raiz> [-f] <paquete>",
 		run:   runQuery,
+	},
+	{
+		name:  "pubkey",
+		short: "imprime la clave publica de una clave privada",
+		usage: "yarmouth pubkey <clave-privada>",
+		run:   runPubkey,
 	},
 	{
 		name:  "check",
