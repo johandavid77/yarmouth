@@ -60,6 +60,31 @@ func TestPersist(t *testing.T) {
 	}
 }
 
+func TestReplace(t *testing.T) {
+	root := t.TempDir()
+	d, _ := Open(root)
+	if err := d.Add(&Record{Name: "p", Pkgver: "1.0.0", BuildID: "1", Manual: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Replace(&Record{Name: "p", Pkgver: "2.0.0", BuildID: "1"}); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := d.Get("p")
+	if !ok || got.Pkgver != "2.0.0" {
+		t.Fatalf("Replace no actualizo el registro: %+v", got)
+	}
+	if err := d.Replace(&Record{Name: "nope", Pkgver: "1"}); err == nil {
+		t.Fatal("se esperaba error al reemplazar un paquete no instalado")
+	}
+	re, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := re.Get("p"); got.Pkgver != "2.0.0" {
+		t.Fatalf("no persistio el reemplazo: %+v", got)
+	}
+}
+
 func TestOwnerMap(t *testing.T) {
 	root := t.TempDir()
 	d, _ := Open(root)

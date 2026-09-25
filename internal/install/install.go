@@ -14,7 +14,15 @@ import (
 )
 
 type Options struct {
-	Force bool
+	Force  bool
+	Manual *bool
+}
+
+func manualOr(opts Options, def bool) bool {
+	if opts.Manual == nil {
+		return def
+	}
+	return *opts.Manual
 }
 
 func Install(pkg *archive.Package, d *db.DB, root string, opts Options) error {
@@ -39,7 +47,7 @@ func Install(pkg *archive.Package, d *db.DB, root string, opts Options) error {
 	if err != nil {
 		return err
 	}
-	rec := recordFromPackage(pkg)
+	rec := recordFromPackage(pkg, manualOr(opts, true))
 	if err := d.Add(rec); err != nil {
 		rollbackPaths(root, created)
 		return err
@@ -48,6 +56,134 @@ func Install(pkg *archive.Package, d *db.DB, root string, opts Options) error {
 		return err
 	}
 	return nil
+}
+
+func Upgrade(pkg *archive.Package, old *db.Record, d *db.DB, root string, opts Options) error {
+	name := pkg.Manifest.Pkgname
+	if old == nil {
+		return fmt.Errorf("paquete %q no esta instalado", name)
+	}
+	if err := pkg.VerifyContent(); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return err
+	}
+	owner := d.OwnerMap()
+	if err := checkConflicts(pkg, owner, root, opts.Force); err != nil {
+		return err
+	}
+	if err := runHook("pre-install", pkg.Hooks[archive.HookPreInstall], root, name, pkg.Manifest.Pkgver); err != nil {
+		return err
+	}
+	created, err := pkg.Extract(root, skipControl)
+	if err != nil {
+		return err
+	}
+	if err := removeStale(root, old, pkg, owner, name); err != nil {
+		rollbackPaths(root, created)
+		return err
+	}
+	rec := recordFromPackage(pkg, old.Manual)
+	if err := d.Replace(rec); err != nil {
+		rollbackPaths(root, created)
+		return err
+	}
+	if err := runHook("post-install", pkg.Hooks[archive.HookPostInstall], root, name, pkg.Manifest.Pkgver); err != nil {
+		return err
+	}
+	return nil
+}
+
+func removeStale(root string, old *db.Record, pkg *archive.Package, owner map[string]string, name string) error {
+	files := map[string]bool{}
+	symlinks := map[string]bool{}
+	hardlinks := map[string]bool{}
+	dirs := map[string]bool{}
+	for _, e := range payloadEntries(pkg) {
+		switch e.Typeflag {
+		case tar.TypeReg:
+			files[e.Name] = true
+		case tar.TypeSymlink:
+			symlinks[e.Name] = true
+		case tar.TypeLink:
+			hardlinks[e.Name] = true
+		case tar.TypeDir:
+			dirs[strings.TrimSuffix(e.Name, "/")] = true
+		}
+	}
+	for _, f := range old.Files {
+		if files[f.Path] || symlinks[f.Path] || hardlinks[f.Path] {
+			continue
+		}
+		if owner[f.Path] == name {
+			os.Remove(archive.RootPath(root, f.Path))
+		}
+	}
+	for _, s := range old.Symlinks {
+		if files[s.Path] || symlinks[s.Path] || hardlinks[s.Path] {
+			continue
+		}
+		if owner[s.Path] == name {
+			os.Remove(archive.RootPath(root, s.Path))
+		}
+	}
+	for hp := range old.Hardlinks {
+		if files[hp] || symlinks[hp] || hardlinks[hp] {
+			continue
+		}
+		if owner[hp] == name {
+			os.Remove(archive.RootPath(root, hp))
+		}
+	}
+	sort.Slice(old.Dirs, func(i, j int) bool {
+		return strings.Count(old.Dirs[i], "/") > strings.Count(old.Dirs[j], "/")
+	})
+	for _, dr := range old.Dirs {
+		dir := strings.TrimSuffix(dr, "/")
+		if dirs[dir] {
+			continue
+		}
+		if owner[dir] == name {
+			os.Remove(archive.RootPath(root, dir))
+		}
+	}
+	return nil
+}
+
+func PruneOrphans(d *db.DB, root string, opts Options) error {
+	for {
+		var orphan string
+		for _, r := range d.All() {
+			if r.Manual {
+				continue
+			}
+			if !isNeeded(r.Name, d) {
+				orphan = r.Name
+				break
+			}
+		}
+		if orphan == "" {
+			return nil
+		}
+		if _, err := removeByName(orphan, d, root, opts); err != nil {
+			return err
+		}
+	}
+}
+
+func isNeeded(name string, d *db.DB) bool {
+	for _, other := range d.All() {
+		if other.Name == name {
+			continue
+		}
+		for _, dep := range other.Depends {
+			if dep == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func RemovePackage(name string, d *db.DB, root string, opts Options) error {
@@ -152,7 +288,7 @@ func checkConflicts(pkg *archive.Package, owner map[string]string, root string, 
 	return nil
 }
 
-func recordFromPackage(pkg *archive.Package) *db.Record {
+func recordFromPackage(pkg *archive.Package, manual bool) *db.Record {
 	m := pkg.Manifest
 	rec := &db.Record{
 		Name:      m.Pkgname,
@@ -164,7 +300,7 @@ func recordFromPackage(pkg *archive.Package) *db.Record {
 		Depends:   append([]string(nil), m.Depends...),
 		Hardlinks: map[string]string{},
 		Hooks:     map[string][]byte{},
-		Manual:    true,
+		Manual:    manual,
 	}
 	for k, v := range pkg.Hooks {
 		rec.Hooks[k] = v

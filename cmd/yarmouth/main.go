@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 type command struct {
 	name  string
@@ -49,8 +49,14 @@ var commands = []command{
 	{
 		name:  "remove",
 		short: "desinstala un paquete",
-		usage: "yarmouth remove -r <raiz> <paquete>",
+		usage: "yarmouth remove -r <raiz> [-o] <paquete>",
 		run:   runRemove,
+	},
+	{
+		name:  "upgrade",
+		short: "actualiza los paquetes instalados",
+		usage: "yarmouth upgrade -r <raiz> [paquete...]",
+		run:   runUpgrade,
 	},
 	{
 		name:  "list",

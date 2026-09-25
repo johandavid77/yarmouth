@@ -10,6 +10,7 @@ import (
 	"yarmouth/internal/db"
 	"yarmouth/internal/install"
 	"yarmouth/internal/repo"
+	"yarmouth/internal/resolve"
 )
 
 func runInstall(args []string, stdout, stderr io.Writer) int {
@@ -18,7 +19,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	root := fs.String("r", "/", "directorio raiz donde se instala (chroot)")
 	force := fs.Bool("f", false, "reemplazar archivos en conflicto")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "instala un paquete: por nombre desde los repositorios o desde un archivo .yrm")
+		fmt.Fprintln(stderr, "instala un paquete y sus dependencias: por nombre desde los repositorios o desde un .yrm")
 		fmt.Fprintln(stderr, "\nUso: yarmouth install -r <raiz> <paquete|paquete.yrm>")
 		fs.PrintDefaults()
 	}
@@ -37,48 +38,80 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	var pkg *archive.Package
+	var entries []resolve.Entry
 	if looksLikeLocal(arg) {
-		pkg, err = archive.Open(arg)
+		pk, err := archive.Open(arg)
+		if err != nil {
+			fmt.Fprintf(stderr, "yarmouth install: %v\n", err)
+			return 1
+		}
+		if _, ok := d.Get(pk.Manifest.Pkgname); ok {
+			fmt.Fprintf(stderr, "yarmouth install: el paquete ya esta instalado\n")
+			return 1
+		}
+		entries, err = resolve.Plan(*root, d, []resolve.Head{{Name: pk.Manifest.Pkgname, Local: arg, Manual: true}})
 		if err != nil {
 			fmt.Fprintf(stderr, "yarmouth install: %v\n", err)
 			return 1
 		}
 	} else {
+		if _, ok := d.Get(arg); ok {
+			fmt.Fprintf(stderr, "yarmouth install: el paquete %q ya esta instalado (usa yarmouth upgrade)\n", arg)
+			return 1
+		}
 		m, err := repo.Resolve(*root, arg)
 		if err != nil {
 			fmt.Fprintf(stderr, "yarmouth install: %v\n", err)
 			return 1
 		}
-		cached, err := repo.FetchPackage(*root, m)
-		if err != nil {
-			fmt.Fprintf(stderr, "yarmouth install: %v\n", err)
-			return 1
-		}
-		fmt.Fprintf(stderr, "yarmouth install: descargado %s (%s)\n", m.Pkg.FullVersion(), m.Remote.Alias)
-		pkg, err = archive.Open(cached)
+		entries, err = resolve.Plan(*root, d, []resolve.Head{{Name: arg, Match: m, Manual: true}})
 		if err != nil {
 			fmt.Fprintf(stderr, "yarmouth install: %v\n", err)
 			return 1
 		}
 	}
 
-	for _, dep := range pkg.Manifest.Depends {
-		if _, ok := d.Get(dep); !ok {
-			fmt.Fprintf(stderr, "aviso: %s depende de %q, que no esta instalado (resolucion de dependencias en fase 3)\n",
-				pkg.Manifest.Pkgname, dep)
-		}
-	}
-
-	if err := install.Install(pkg, d, *root, install.Options{Force: *force}); err != nil {
-		fmt.Fprintf(stderr, "yarmouth install: %v\n", err)
-		return 1
-	}
-	fmt.Fprintf(stdout, "instalado: %s-%s-%s (%s)\n",
-		pkg.Manifest.Pkgname, pkg.Manifest.Pkgver, pkg.Manifest.BuildID, pkg.Manifest.Arch)
-	return 0
+	return commitPlan(*root, d, entries, *force, stdout, stderr)
 }
 
 func looksLikeLocal(arg string) bool {
 	return strings.HasSuffix(arg, ".yrm")
+}
+
+func commitPlan(root string, d *db.DB, entries []resolve.Entry, force bool, stdout, stderr io.Writer) int {
+	for _, e := range entries {
+		src := e.Local
+		if src == "" {
+			cached, err := repo.FetchPackage(root, e.Match)
+			if err != nil {
+				fmt.Fprintf(stderr, "yarmouth: %v\n", err)
+				return 1
+			}
+			src = cached
+		}
+		pkg, err := archive.Open(src)
+		if err != nil {
+			fmt.Fprintf(stderr, "yarmouth: %v\n", err)
+			return 1
+		}
+		opts := install.Options{Force: force}
+		if e.Upgrade {
+			old, _ := d.Get(e.Name)
+			err = install.Upgrade(pkg, old, d, root, opts)
+		} else {
+			m := e.Manual
+			opts.Manual = &m
+			err = install.Install(pkg, d, root, opts)
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "yarmouth: %v\n", err)
+			return 1
+		}
+		if e.Upgrade {
+			fmt.Fprintf(stdout, "actualizado: %s (%s)\n", e.Name, e.Version)
+		} else {
+			fmt.Fprintf(stdout, "instalado: %s-%s (%s)\n", pkg.Manifest.Pkgname, e.Version, pkg.Manifest.Arch)
+		}
+	}
+	return 0
 }

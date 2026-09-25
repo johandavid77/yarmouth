@@ -11,6 +11,10 @@ import (
 )
 
 func buildPackage(t *testing.T, name string, deps []string, hooks archive.Hooks, extra map[string]string) string {
+	return buildPackageV(t, name, "1.0.0", deps, hooks, extra)
+}
+
+func buildPackageV(t *testing.T, name, version string, deps []string, hooks archive.Hooks, extra map[string]string) string {
 	t.Helper()
 	dest := t.TempDir()
 	bin := filepath.Join(dest, "usr", "bin")
@@ -36,10 +40,10 @@ func buildPackage(t *testing.T, name string, deps []string, hooks archive.Hooks,
 		}
 	}
 	m := metadata.Manifest{
-		Pkgname: name, Pkgver: "1.0.0", BuildID: "1", Arch: "x86_64",
+		Pkgname: name, Pkgver: version, BuildID: "1", Arch: "x86_64",
 		Desc: "paquete de pruebas", Depends: deps,
 	}
-	out := filepath.Join(t.TempDir(), name+"-1.0.0-1.x86_64.yrm")
+	out := filepath.Join(t.TempDir(), name+"-"+version+"-1.x86_64.yrm")
 	f, err := os.Create(out)
 	if err != nil {
 		t.Fatal(err)
@@ -166,5 +170,84 @@ func TestDependentsBlockRemove(t *testing.T) {
 	}
 	if _, ok := d.Get("aaa"); ok {
 		t.Fatal("aaa deberia estar fuera de la db")
+	}
+}
+
+func TestManualFlag(t *testing.T) {
+	root := t.TempDir()
+	d, _ := db.Open(root)
+	auto := false
+	if err := Install(openPkg(t, buildPackage(t, "auto", nil, archive.Hooks{}, nil)), d, root, Options{Manual: &auto}); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := d.Get("auto"); rec.Manual {
+		t.Fatal("el paquete deberia quedar marcado como auto")
+	}
+	if err := Install(openPkg(t, buildPackage(t, "world", nil, archive.Hooks{}, nil)), d, root, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := d.Get("world"); !rec.Manual {
+		t.Fatal("por defecto el paquete deberia quedar manual (world)")
+	}
+}
+
+func TestUpgradeReplacesAndCleansStale(t *testing.T) {
+	root := t.TempDir()
+	d, _ := db.Open(root)
+	v1 := buildPackage(t, "app", nil, archive.Hooks{}, map[string]string{"usr/lib/app.old": "obsoleto"})
+	if err := Install(openPkg(t, v1), d, root, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install(openPkg(t, v1), d, root, Options{}); err == nil {
+		t.Fatal("reinstalar sin upgrade debe fallar")
+	}
+
+	old, _ := d.Get("app")
+	v2 := buildPackageV(t, "app", "2.0.0", nil, archive.Hooks{}, map[string]string{"usr/lib/app.new": "nuevo"})
+	if err := Upgrade(openPkg(t, v2), old, d, root, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "usr/lib/app.old")); !os.IsNotExist(err) {
+		t.Errorf("el archivo obsoleto deberia eliminarse: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "usr/lib/app.new")); err != nil {
+		t.Errorf("faltaria el archivo nuevo: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "usr/bin/app")); err != nil {
+		t.Errorf("el binario comun deberia seguir: %v", err)
+	}
+	rec, _ := d.Get("app")
+	if rec.Pkgver != "2.0.0" || !rec.Manual {
+		t.Errorf("el registro deberia actualizarse preservando manual: %+v", rec)
+	}
+}
+
+func TestPruneOrphans(t *testing.T) {
+	root := t.TempDir()
+	d, _ := db.Open(root)
+	auto := false
+	// lib -> core, app -> lib; todo se instala auto salvo app
+	if err := Install(openPkg(t, buildPackage(t, "core", nil, archive.Hooks{}, nil)), d, root, Options{Manual: &auto}); err != nil {
+		t.Fatal(err)
+	}
+	lib := buildPackage(t, "lib", []string{"core"}, archive.Hooks{}, nil)
+	if err := Install(openPkg(t, lib), d, root, Options{Manual: &auto}); err != nil {
+		t.Fatal(err)
+	}
+	app := buildPackage(t, "app", []string{"lib"}, archive.Hooks{}, nil)
+	if err := Install(openPkg(t, app), d, root, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemovePackage("app", d, root, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	// lib y core quedan instalados, sin dependientes: son huerfanos auto
+	if err := PruneOrphans(d, root, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"lib", "core"} {
+		if _, ok := d.Get(name); ok {
+			t.Errorf("%s deberia haber sido podado", name)
+		}
 	}
 }

@@ -14,9 +14,10 @@ func runRemove(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	root := fs.String("r", "/", "directorio raiz de donde se desinstala (chroot)")
 	force := fs.Bool("f", false, "forzar la baja aunque haya dependencias")
+	autoremove := fs.Bool("o", false, "eliminar tambien los paquetes auto que queden huerfanos")
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "desinstala un paquete del sistema (o de un chroot)")
-		fmt.Fprintln(stderr, "\nUso: yarmouth remove -r <raiz> <paquete>")
+		fmt.Fprintln(stderr, "\nUso: yarmouth remove -r <raiz> [-o] <paquete>")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -38,5 +39,11 @@ func runRemove(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stdout, "eliminado: %s\n", name)
+	if *autoremove {
+		if err := install.PruneOrphans(d, *root, install.Options{Force: *force}); err != nil {
+			fmt.Fprintf(stderr, "yarmouth remove: %v\n", err)
+			return 1
+		}
+	}
 	return 0
 }

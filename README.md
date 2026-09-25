@@ -20,11 +20,11 @@ sencillo y auditable.
 | 0 | Formato `.yrm`, manifiesto, índice `repodata`, `build` / `index` | ✅ |
 | 1 | Instalación/eliminación, base de datos `pkgdb.json`, hooks, `-r` (chroot) | ✅ |
 | 2 | Repositorios remotos, `sync`, instalación por nombre con verificación sha256 | ✅ |
-| 3 | Resolución de dependencias, `upgrade`, `world` | ⏳ siguiente |
-| 4 | Firma/verificación de paquetes, `query` | pendiente |
+| 3 | Resolución de dependencias, `upgrade`, `world` / `auto` | ✅ |
+| 4 | Firma/verificación de paquetes, `query` | ⏳ siguiente |
 | 5 | Recetas de construcción (bash → YAML) | pendiente |
 
-Versión actual: **0.2.0**.
+Versión actual: **0.3.0**.
 
 ## Requisitos
 
@@ -52,15 +52,20 @@ yarmouth index -dir /srv/repo -out /srv/repo/repodata
 yarmouth repo -r /mnt/lfs add myrepo https://raw.githubusercontent.com/USUARIO/yarmouth/main/repo
 yarmouth sync -r /mnt/lfs
 
-# Instalar por nombre (resuelve desde los repositorios)
-yarmouth install -r /mnt/lfs hello
+# Instalar por nombre (resuelve la cadena de dependencias; las libs van "auto")
+yarmouth install -r /mnt/lfs app
 
-# También se admite un .yrm local
-yarmouth install -r /mnt/lfs ./hello-0.1.0-1.x86_64.yrm
+# Actualiza a la version mas reciente (paquete concreto o todos)
+yarmouth upgrade -r /mnt/lfs
+yarmouth upgrade -r /mnt/lfs app
 
-yarmouth list -r /mnt/lfs          # paquetes instalados
-yarmouth remove -r /mnt/lfs hello  # desinstala (con hooks y limpieza)
-yarmouth remove -f -r /mnt/lfs x   # fuerza sobre dependientes
+yarmouth list -r /mnt/lfs            # paquetes instalados (manual/auto)
+yarmouth remove -r /mnt/lfs app      # desinstala (con hooks y limpieza)
+yarmouth remove -o -r /mnt/lfs app   # ademas elimina las dependencias huerfanas
+yarmouth remove -f -r /mnt/lfs x     # fuerza sobre dependientes
+
+# También se admite un .yrm local (resuelve sus dependencias de los repos)
+yarmouth install -r /mnt/lfs ./app-1.0-1.x86_64.yrm
 ```
 
 `-r <raiz>` indica el directorio raíz (chroot). Por defecto es `/`. Las
@@ -132,27 +137,32 @@ instalar.
 
 `<raiz>/var/db/yarmouth/pkgdb.json` conserva el inventario de paquetes
 instalados: versión, dependencias declaradas, archivos/directorios/symlinks/
-hardlinks propietarios, hooks y si se instaló manualmente. Se escribe de forma
-atómica (archivo temporal + rename). `remove` borra solo lo que es propiedad del
-paquete, en orden profundo primero.
+hardlinks propietarios, hooks y si se instaló **manual (world)** o **auto**
+(aunque sea dependencia). Se escribe de forma atómica (archivo temporal +
+rename). `remove` borra solo lo que es propiedad del paquete, en orden profundo
+primero, y con `-o` poda las dependencias `auto` que quedan huérfanas.
+`install` resuelve la cadena de dependencias en orden deps-first: las
+dependencias ya instaladas se consideran satisfechas y las nuevas se marcan
+`auto`. `upgrade` sustituye cada paquete por la versión más reciente disponible,
+preservando la marca manual/auto, eliminando archivos obsoletos y agregando
+como `auto` las dependencias nuevas.
 
 ## Estructura del código
 
 ```
-cmd/yarmouth/        CLI: build, index, repo, sync, install, remove, list
+cmd/yarmouth/        CLI: build, index, repo, sync, install, remove, list, upgrade
 internal/archive/    formato .yrm (crear/abrir/verificar/extraer, reproducible)
 internal/metadata/   manifiesto INI estricto
 internal/version/    comparación de versiones estilo Debian
 internal/repo/       índice repodata y repositorios remotos (sync/resolver/descargar)
+internal/resolve/    plan de instalación: dependencias, ciclos, upgrade
 internal/db/         inventario pkgdb.json
-internal/install/    instalación/eliminación con hooks y rollback
+internal/install/    instalación/eliminación con hooks, rollback y autoremove
 examples/hellopkg/   paquete de ejemplo con hooks de instalación/eliminación
 ```
 
 ## Roadmap
 
-- **Fase 3** — resolución real de dependencias (topológica, transactiva),
-  `upgrade` y marcas `world`/`auto`.
 - **Fase 4** — firmas (p. ej. ed25519), verificación al instalar y `query`.
 - **Fase 5** — recetas de construcción del paquete desde el código fuente.
 

@@ -106,6 +106,14 @@ func (d *DB) Remove(name string) error {
 	return d.save()
 }
 
+func (d *DB) Replace(r *Record) error {
+	if _, ok := d.pkgs[r.Name]; !ok {
+		return fmt.Errorf("paquete %q no esta instalado", r.Name)
+	}
+	d.pkgs[r.Name] = r
+	return d.save()
+}
+
 func (d *DB) Get(name string) (*Record, bool) {
 	r, ok := d.pkgs[name]
 	return r, ok
