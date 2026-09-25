@@ -24,7 +24,7 @@ sencillo y auditable.
 | 4 | Firmas ed25519, verificación al instalar, `query` / `check` | ✅ |
 | 5 | Recetas de construcción (`.yarmouth`, bash → YAML) | ✅ |
 
-Versión actual: **0.5.0**.
+Versión actual: **0.5.1**.
 
 ## Requisitos
 
@@ -58,6 +58,8 @@ yarmouth install -r /mnt/lfs app
 # Actualiza a la version mas reciente (paquete concreto o todos)
 yarmouth upgrade -r /mnt/lfs
 yarmouth upgrade -r /mnt/lfs app
+yarmouth upgrade -r /mnt/lfs -l    # solo LISTA las actualizaciones pendientes
+                                   # (sin aplicar; no requiere permisos)
 
 yarmouth list -r /mnt/lfs            # paquetes instalados (manual/auto)
 yarmouth remove -r /mnt/lfs app      # desinstala (con hooks y limpieza)
