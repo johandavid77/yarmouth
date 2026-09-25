@@ -308,6 +308,17 @@ func FetchPackage(root string, m Match) (string, error) {
 		return "", err
 	}
 	dest := filepath.Join(cache, m.Pkg.Filename())
+	// cache-hit: si el .yrm ya esta en la cache y su sha256 coincide con el
+	// que certifica el indice firmado (sync), no hace falta volver a la red.
+	// Auditable: el sha256 se re-verifica aqui, no se confia en el nombre.
+	if data, err := os.ReadFile(dest); err == nil {
+		if int64(len(data)) == m.Pkg.Size {
+			sum := sha256.Sum256(data)
+			if hex.EncodeToString(sum[:]) == m.Pkg.SHA256 {
+				return dest, nil
+			}
+		}
+	}
 	data, err := FetchBytes(m.Remote.PackageURL(m.Pkg.Filename()))
 	if err != nil {
 		return "", err
@@ -323,4 +334,106 @@ func FetchPackage(root string, m Match) (string, error) {
 		return "", err
 	}
 	return dest, nil
+}
+
+// CachedPackages enumera los .yrm que la cache verifica: los que ya se
+// descargaron bien (FetchPackage los escribio tras verificar tamano y sha256
+// contra el repodata firmado). Devuelve un Match por archivo en la cache de
+// la raiz (root). Se usa para export: solo sale de la cache lo que un indice
+// firmado certifico al entrar, nunca un .yrm huerfano o manipulando.
+func CachedPackages(root string) ([]Match, error) {
+	cache := rootPath(root, cachePath)
+	entries, err := os.ReadDir(cache)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	var out []Match
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yrm") {
+			continue
+		}
+		// el sha256 se vuelve a calcular aqui, no se confia en el nombre:
+		// si el archivo no verifica, no se exporta (auditable de punta a punta).
+		data, err := os.ReadFile(filepath.Join(cache, e.Name()))
+		if err != nil {
+			continue
+		}
+		sum := sha256.Sum256(data)
+		sha := hex.EncodeToString(sum[:])
+		files, err := filepath.Glob(filepath.Join(rootPath(root, cachePath), "*.repodata"))
+		if err != nil {
+			continue
+		}
+		for _, idxFile := range files {
+			idx, err := ReadIndexFile(idxFile)
+			if err != nil {
+				continue
+			}
+			for _, p := range idx {
+				if p.SHA256 == sha && p.Filename() == e.Name() {
+					alias := strings.TrimSuffix(filepath.Base(idxFile), ".repodata")
+					out = append(out, Match{
+						Remote: Remote{Alias: alias},
+						Pkg:    p,
+					})
+					break
+				}
+			}
+			if len(out) > 0 && out[len(out)-1].Pkg.Filename() == e.Name() {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+// LocalMatchBySHA busca en los indices locales ya sincronizados (cache/*.repodata)
+// un paquete con el sha256 dado. Auditable: un .yrm solo entra a la cache local
+// si su sha256 lo certifica un indice que sync ya firmo y verifico; import la
+// usa para rechazar cualquier archivo que ningun indice certificate.
+func LocalMatchBySHA(root, sha string) (Match, bool, error) {
+	aliases, err := CachedAliases(root)
+	if err != nil {
+		return Match{}, false, err
+	}
+	for _, alias := range aliases {
+		idx, err := ReadIndexFile(CacheIndex(root, alias))
+		if err != nil {
+			continue
+		}
+		for _, p := range idx {
+			if p.SHA256 == sha {
+				return Match{Remote: Remote{Alias: alias}, Pkg: p}, true, nil
+			}
+		}
+	}
+	return Match{}, false, nil
+}
+
+// CachedAliases devuelve los alias de repositorio que tienen indice local
+// sincronizado y verificado (cache/<alias>.repodata).
+func CachedAliases(root string) ([]string, error) {
+	cache := rootPath(root, cachePath)
+	matches, err := filepath.Glob(filepath.Join(cache, "*.repodata"))
+	if err != nil {
+		return nil, err
+	}
+	var aliases []string
+	for _, m := range matches {
+		aliases = append(aliases, strings.TrimSuffix(filepath.Base(m), ".repodata"))
+	}
+	return aliases, nil
+}
+
+// CacheFile devuelve la ruta del .yrm dentro de la cache de la raiz (root).
+// Usala para exportar/importar: localiza el archivo donde FetchPackage lo
+// escribio tras verificar tamano y sha256 contra un indice firmado.
+func CacheFile(root, filename string) string {
+	return filepath.Join(rootPath(root, cachePath), filename)
+}
+
+// CacheRoot devuelve el directorio cache de la raiz (donde viven .yrm y
+// *.repodata sincronizados y verificados).
+func CacheRoot(root string) string {
+	return rootPath(root, cachePath)
 }

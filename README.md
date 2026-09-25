@@ -24,7 +24,7 @@ sencillo y auditable.
 | 4 | Firmas ed25519, verificación al instalar, `query` / `check` | ✅ |
 | 5 | Recetas de construcción (`.yarmouth`, bash → YAML) | ✅ |
 
-Versión actual: **0.6.0**.
+Versión actual: **0.7.0**.
 
 ## Requisitos
 
@@ -100,6 +100,14 @@ yarmouth remove -f -r /mnt/lfs x     # fuerza sobre dependientes
 
 # También se admite un .yrm local (resuelve sus dependencias de los repos)
 yarmouth install -r /mnt/lfs ./app-1.0-1.x86_64.yrm
+
+# Caché local auditable: los .yrm descargados (var/cache/yarmouth/) se
+# gestionan con certificación sha256 contra el índice sincronizado y verificado
+# (firmado). Nada entra ni sale de esa caché sin que el sha256 lo certifique un
+# índice firmado local: un .yrm huérfano o manipulado se rechaza siempre.
+yarmouth cache -r /mnt/lfs list                    # listar la caché verificada
+yarmouth cache -r /mnt/lfs export -out /mnt/usb    # copia SOLO lo certificado
+yarmouth cache -r /mnt/lfs import -dir /mnt/usb    # NO admite lo no certificado
 
 yarmouth query -r /mnt/lfs app     # detalles de un paquete instalado
 yarmouth check -r /mnt/lfs         # verifica la integridad de lo instalado

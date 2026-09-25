@@ -1,4 +1,4 @@
-.TH YARMOUTH 1 "septiembre 2026" "yarmouth 0.6.0" "Manual de yarmouth"
+.TH YARMOUTH 1 "septiembre 2026" "yarmouth 0.7.0" "Manual de yarmouth"
 .SH NOMBRE
 yarmouth \- gestion de paquetes para sistemas LFS
 .SH SINOPSIS
@@ -99,6 +99,18 @@ muestra ayuda (yarmouth help <comando>)
 \fIUso:\fR yarmouth help <comando>
 .PP
 muestra la ayuda general o, con un argumento, la de un comando concreto (misma informacion que aparece en la pagina de manual yarmouth(1), generada con yarmouth man 1).
+.SS cache
+gestiona la cache local de .yrm (export/import/list)
+.PP
+\fIUso:\fR yarmouth cache \-r <raiz> <export|import|list> ...
+.PP
+opera sobre la cache de paquetes descargados (raiz/var/cache/yarmouth) de forma segura y auditable: NUNCA se copia un .yrm hacia fuera (export) o hacia dentro (import) sin que su sha256 este certificado por un indice firmado local (sync/verify). import solo acepta .yrm cuyo sha256 coincida con un indice sincronizado y firmado; un .yrm huerfano o alterado se rechaza y se reporta. list muestra la cache actual con su sha256 verificado.
+.SS cache
+exporta/importa/lista la cache local de .yrm
+.PP
+\fIUso:\fR yarmouth cache \-r <raiz> <export|import|list> ...
+.PP
+opera sobre la cache local (raiz/var/cache/yarmouth) con la garantia auditable de sha256: export copia fuera SOLO .yrm certificados (sha256 verificado contra indice firmado) a un \-out <dir>; import acepta en la cache SOLO .yrm cuyo sha256 coincida con un indice firmado sincronizado (un .yrm huerfano/manipulado se rechaza y nunca entra: seguro+agil+auditable); list muestra la cache con alias, sha256 y tamano. Esto permite mover .yrm por USB/LFS sin red y sin perdida de verificacion.
 .SS man
 genera las paginas de manual en roff
 .PP
