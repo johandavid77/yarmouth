@@ -24,7 +24,7 @@ sencillo y auditable.
 | 4 | Firmas ed25519, verificación al instalar, `query` / `check` | ✅ |
 | 5 | Recetas de construcción (`.yarmouth`, bash → YAML) | ✅ |
 
-Versión actual: **0.5.1**.
+Versión actual: **0.6.0**.
 
 ## Requisitos
 
@@ -41,6 +41,38 @@ make clean
 ```
 
 Los tests no tocan el sistema: usan directorios temporales.
+
+## Correr en la máquina LFS (bootstrap)
+
+`make build` produce un **binario estático** (`CGO_ENABLED=0`): no depende de la
+glibc del anfitrión, cualquier `linux x86_64` lo ejecuta.
+
+1. Compilar y copiar el binario al chroot/sistema:
+
+   ```sh
+   make cross                          # -> bin/yarmouth (estatico)
+   cp bin/yarmouth /mnt/lfs/usr/bin/yarmouth
+   ```
+
+Durante la construcción del LFS (en la máquina de desarrollo) se gestiona con
+`-r /mnt/lfs`; no hace falta `doas` si tu usuario es dueño de ese árbol.
+
+Ya en el sistema arrancado, los comandos que escriben (`install`, `remove`,
+`upgrade`, `sync`, `repo`, `key`) necesitan privilegios, p. ej. con `doas`:
+
+```
+# /etc/doas.conf
+permit nopass :wheel cmd yarmouth
+```
+
+```sh
+doas yarmouth key -r / add <PUB>      # claves de confianza
+doas yarmouth repo -r / add -k <PUB> main https://.../repo
+doas yarmouth sync -r /
+doas yarmouth upgrade -r / -l         # consultar pendientes (sin doas)
+doas yarmouth install -r / app
+yarmouth check -r /                   # integridad; no requiere doas
+```
 
 ## Uso rápido
 
@@ -71,6 +103,13 @@ yarmouth install -r /mnt/lfs ./app-1.0-1.x86_64.yrm
 
 yarmouth query -r /mnt/lfs app     # detalles de un paquete instalado
 yarmouth check -r /mnt/lfs         # verifica la integridad de lo instalado
+
+# Paginas de manual (misma tabla que alimenta -h y help, nunca desincronizadas)
+yarmouth man 1 > yarmouth.1          # sec. 1: yarmouth.1 (todos los comandos)
+yarmouth man 5 > yarmouth.conf.5     # sec. 5: yarmouth.conf.5 (formatos)
+#   Para instalarlas en el sistema:  make man   (genera share/man/man1/ y man5/)
+#   como usuario normal de la maquina de desarrollo, y luego copialas con
+#   permisos al chroot o a /usr/share/man (ver "Estructura del codigo").
 ```
 
 ## Recetas de construcción (`.yarmouth`)
@@ -224,7 +263,10 @@ como `auto` las dependencias nuevas.
 
 ```
 cmd/yarmouth/        CLI: build, index, repo, sync, install, remove, list, upgrade,
-                     keygen, key, pubkey, sign, query, check
+                     keygen, key, pubkey, sign, query, check, man
+share/man/           páginas de manual roff (yarmouth.1, yarmouth.conf.5),
+                     generadas con `make man` desde la misma tabla que alimenta
+                     -h y help: nunca se desincronizan de la ayuda integrada.
 internal/archive/    formato .yrm (crear/abrir/verificar/extraer, reproducible)
 internal/metadata/   manifiesto INI estricto
 internal/version/    comparación de versiones estilo Debian

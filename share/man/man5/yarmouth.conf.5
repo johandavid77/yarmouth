@@ -1,0 +1,30 @@
+.TH YARMOUTH.CONF 5 "septiembre 2026" "yarmouth 0.6.0" "Manual de yarmouth"
+.SH NOMBRE
+yarmouth.conf \- formatos de configuracion y datos de yarmouth
+.SH DESCRIPCION
+Esta pagina documenta los archivos que yarmouth lee y escribe bajo la base \fI<raiz>\fR (por defecto \fI/\fR) sobre la que opera con \fI\-r\fR.
+.SH REPOS\&.CONF
+.B \fI<raiz>/etc/yarmouth/repos.conf\fR
+.PP
+Una linea por repositorio remoto, campos separados por tabulador:
+.PP
+\fIalias\tURL\t[clave-publica-ed25519]\fR
+.PP
+La clave es opcional y se configura con \fByarmouth repo add \-k\fR. Sin ella, el indice se acepta sin firmar (para desarrollo). Con ella, \fBsync\fR exige \fIrepodata.sig\fR verificable por esa clave antes de poblar la cache.
+.SH TRUSTED\&.KEYS
+.B \fI<raiz>/etc/yarmouth/trusted\-keys\fR
+.PP
+Una linea por clave publica ed25519 (hex, 64 caracteres), admitiendo comentarios con \fI#\fR. Se administra con \fByarmouth key add/del/list\fR. Si el archivo contiene al menos una clave, \fBinstall\fR rechaza cualquier paquete sin firmar o no verificable por esas claves (y \fBupgrade\fR pasa a exigir paquetes firmados). Con el archivo vacio (modo desarrollo) se acepta cualquier paquete.
+.SH REpODATA
+.B \fIrepodata\fR
+.PP
+Indice de un repositorio: lista de \fIarchivo\tyrm\tTAMANO\tsha256\fR, una por paquete, generado con \fByarmouth index\fR. La firma es un ed25519 de su contenido en \fIrepodata.sig\fR (\fByarmouth sign\fR).
+.SH PAQUETE .YRM
+.PP
+Un \fI.yrm\fR es un tar.xz con estructura interna documentada en \fByarmouth build\fR y en el README: manifiesto INI estricto, contenido con uid/gid 0 y mtime 0 (construccion reproducible), hooks opcionales \fIyarmouth/*\fR y firma ed25519 embebida (\fByarmouth sign\fR).
+.SH PKGDB\&.JSON
+.B \fI<raiz>/var/db/yarmouth/pkgdb.json\fR
+.PP
+Base de datos de lo instalado: paquete \-> lista de archivos con su sha256, dependencias (auto/manual) y hooks. Se mantiene con \fBinstall/remove/upgrade\fR y se verifica con \fByarmouth check\fR.
+.SH VER TAMBIEN
+.BR yarmouth (1)

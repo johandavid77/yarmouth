@@ -1,0 +1,132 @@
+.TH YARMOUTH 1 "septiembre 2026" "yarmouth 0.6.0" "Manual de yarmouth"
+.SH NOMBRE
+yarmouth \- gestion de paquetes para sistemas LFS
+.SH SINOPSIS
+.B yarmouth
+\fIcomando\fR [\fIopciones\fR]
+.PP
+.B yarmouth help [\fIcomando\fR]
+.PP
+.B yarmouth\-V\fR\fI\-V\fR  |  .B \-\-version
+.SH DESCRIPCION
+Yarmouth es un gestor de paquetes binarios \fI.yrm\fR para sistemas Linux From Scratch, inspirado en dnf, xbps y pkg.
+.PP
+Gestona repositorios remotos con indice \fIrepodata\fR firmado (ed25519), resuelve dependencias deps-first, ejecuta hooks de instalacion/eliminacion con rollback, y tiene un modo de construccion reproducible por recetas \fI.yarmouth\fR.
+.PP
+Los comandos que escriben (\fBinstall\fR, \fBremove\fR, \fBupgrade\fR, \fBrepo\fR, \fBkey\fR, \fBsync\fR) operan sobre la base citada con \fI\-r\fR (por defecto \fI/\fR); en una maquina LFS arrancada suelen necesitar privilegios (doas). Los de consulta (\fBquery\fR, \fBcheck\fR, \fBlist\fR) son de solo lectura.
+.SH COMANDOS
+.SS build
+construye un paquete .yrm desde un DESTDIR o una receta
+.PP
+\fIUso:\fR yarmouth build \-manifest <manifest> \-destdir <dir> [opciones]
+.PP
+construye el paquete .yrm que se publica en un repositorio. En modo DESTDIR empaqueta el contenido de \-destdir descrito por \-manifest (INI estricto: pkgname, pkgver, buildid, arch, license, depends) e incorpora los hooks opcionales. En modo receta (\-recipe) lee un .yarmouth: descarga las fuentes y verifica su sha256, ejecuta prepare/build/install con bash \-e y escribe el .yrm en \-out. La salida es reproducible.
+.SS index
+crea el indice repodata de un directorio
+.PP
+\fIUso:\fR yarmouth index \-dir <dir> \-out <repodata>
+.PP
+escanea \-dir en busca de paquetes .yrm y genera el indice repodata \-out. Ese indice es el que npm publica como repositorio; luego se firma con sign \-k (y se publica repodata.sig).
+.SS repo
+administra repositorios (add/del/list)
+.PP
+\fIUso:\fR yarmouth repo \-r <raiz> <add|del|list> ...
+.PP
+administra los repositorios remotos en repos.conf de la raiz (\-r). add registra un alias con su URL y, opcionalmente con \-k, la clave publica ed25519 que debe firmar el indice; del lo elimina; list los muestra. sync usa esta configuracion.
+.SS sync
+descarga los indices de los repositorios
+.PP
+\fIUso:\fR yarmouth sync \-r <raiz>
+.PP
+descarga el repodata de cada repositorio configurado (repo add) a la cache de la raiz (\-r). Si el repo tiene clave configurada, exige repodata.sig verificable por ella (y los paquetes no firmados seran rechazados al instalar); sin clave, acepta el indice sin firmar (solo para desarrollo local).
+.SS install
+instala un paquete (por nombre o .yrm)
+.PP
+\fIUso:\fR yarmouth install \-r <raiz> <paquete|paquete.yrm>
+.PP
+instala un paquete por nombre (resolviendo la cadena de dependencias desde los indices ya sincronizados) o un .yrm local. Si hay claves de confianza configuradas (key add), todo paquete debe estar firmado y verificable por ellas (ademas de hooks opcionales sin firmar que el instalador ejecuta); sin claves, acepta cualquier paquete (modo desarrollo).
+.SS remove
+desinstala un paquete
+.PP
+\fIUso:\fR yarmouth remove \-r <raiz> [\-o] <paquete>
+.PP
+desinstala un paquete ejecutando sus hooks de eliminacion. \-o elimina tambien las dependencias auto que quedan huerfanas; \-f fuerza la baja aunque haya dependientes.
+.SS upgrade
+actualiza los paquetes instalados
+.PP
+\fIUso:\fR yarmouth upgrade \-r <raiz> [paquete...]
+.PP
+actualiza a la version mas reciente los paquetes indicados (o todos los instalados) resolviendo el plan completo (dependencias nuevas incluidas, deps\-first). \-l solo lista las actualizaciones pendientes sin aplicar nada: no descarga, no escribe, no requiere permisos. Message: 'sistema actualizado' cuando no hay nada mas reciente.
+.SS keygen
+genera un par de claves ed25519
+.PP
+\fIUso:\fR yarmouth keygen \-out <archivo>
+.PP
+genera un par de claves ed25519 y escribe la privada (hex) en \-out. La clave publica se obtiene con keygen \-pub o pubkey; es la que se distribuye para repo add \-k y key add.
+.SS key
+administra claves de confianza (add/del/list)
+.PP
+\fIUso:\fR yarmouth key \-r <raiz> <add|del|list> ...
+.PP
+administra la lista de claves publicas de confianza en etc/yarmouth/trusted\-keys de la raiz. Con al menos una clave, todo paquete a instalar debe estar firmado y poder verificarse con alguna de ellas; sin claves, yarmouth funciona en modo desarrollo y acepta paquetes sin firmar.
+.SS sign
+firma un .yrm o un repodata
+.PP
+\fIUso:\fR yarmouth sign \-k <clave> <paquete.yrm|repodata>
+.PP
+firma con ed25519 un paquete .yrm (la firma se embebe en el archivo) o un indice repodata (escribe repodata.sig al lado). Los paquetes/.yrm se verifican al instalar cuando hay claves de confianza; la firma del repodata la exige sync si el repo tiene clave.
+.SS query
+detalles de un paquete instalado
+.PP
+\fIUso:\fR yarmouth query \-r <raiz> [\-f] <paquete>
+.PP
+muestra el detalle de un paquete instalado: version completa, arch, hash del contenido, dependencias y, con \-f, la lista de archivos que instalo.
+.SS check
+verifica la integridad de lo instalado
+.PP
+\fIUso:\fR yarmouth check \-r <raiz>
+.PP
+recalcula el sha256 de cada archivo instalado y lo compara con el hash registrado en la base de datos (pkgsdb). Detecta archivos modificados, borrados o anadidos; devuelve codigo 1 si hay algun problema.
+.SS list
+lista los paquetes instalados
+.PP
+\fIUso:\fR yarmouth list \-r <raiz> [patron]
+.PP
+lista los paquetes instalados, mostrando su version completa y si fueron instalados manualmente o como dependencia automatica. Con un patron, filtra por nombre.
+.SS help
+muestra ayuda (yarmouth help <comando>)
+.PP
+\fIUso:\fR yarmouth help <comando>
+.PP
+muestra la ayuda general o, con un argumento, la de un comando concreto (misma informacion que aparece en la pagina de manual yarmouth(1), generada con yarmouth man 1).
+.SS man
+genera las paginas de manual en roff
+.PP
+\fIUso:\fR yarmouth man [1|5]
+.PP
+genera las paginas de manual a partir de la misma tabla que alimenta \-h y help: resumen, sintaxis y detalles de cada comando nunca pueden desincronizarse. yarmouth man 1 produce yarmouth.1 (todos los comandos); yarmouth man 5 produce yarmouth.conf.5 (formatos de repos.conf, trusted\-keys, repodata, .yrm, recetas .yarmouth y pkgdb.json). Para instalar: yarmouth man 1 > /usr/share/man/man1/yarmouth.1 y yarmouth man 5 > /usr/share/man/man5/yarmouth.conf.5.
+.SS man
+genera las paginas de manual en roff
+.PP
+\fIUso:\fR yarmouth man [1|5]
+.PP
+imprime en roff la pagina de manual completa a partir de la misma tabla que alimenta \-h y help: el resumen, la sintaxis y los detalles de cada comando nunca pueden desincronizarse. Seccion 1 genera yarmouth.1 (todos los comandos y opciones); seccion 5 genera yarmouth.conf.5 (formatos de repos.conf, trusted\-keys, repodata, el paquete .yrm, pkgdb.json). Para instalar: yarmouth man 1 > /usr/share/man/man1/yarmouth.1 y yarmouth man 5 > /usr/share/man/man5/yarmouth.conf.5. Tambien lo usa make man.
+.SH OPCIONES GLOBALES
+.TP
+.BI \-h " " \-\-help
+muestra la ayuda
+.TP
+.BI \-V " " \-\-version
+muestra la version
+.SH ARCHIVOS
+.TP
+.B \fI<raiz>/etc/yarmouth/repos.conf\fR
+configuracion de repositorios (ver yarmouth.conf(5))
+.TP
+.B \fI<raiz>/etc/yarmouth/trusted\-keys\fR
+claves publicas de confianza
+.TP
+.B \fI<raiz>/var/db/yarmouth/pkgdb.json\fR
+base de datos de paquetes instalados
+.SH VER TAMBIEN
+.BR yarmouth.conf (5)
