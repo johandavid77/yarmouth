@@ -11,6 +11,7 @@ import (
 	"yarmouth/internal/install"
 	"yarmouth/internal/repo"
 	"yarmouth/internal/resolve"
+	"yarmouth/internal/sig"
 )
 
 func runInstall(args []string, stdout, stderr io.Writer) int {
@@ -78,6 +79,25 @@ func looksLikeLocal(arg string) bool {
 	return strings.HasSuffix(arg, ".yrm")
 }
 
+func verifyPackageTrust(pkg *archive.Package, root string) error {
+	keys, err := sig.LoadTrusted(root)
+	if err != nil {
+		return err
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	if len(pkg.Sig) == 0 {
+		return fmt.Errorf("paquete %q sin firmar (hay claves de confianza configuradas)", pkg.Manifest.Pkgname)
+	}
+	for _, k := range keys {
+		if pkg.VerifySig(k) {
+			return nil
+		}
+	}
+	return fmt.Errorf("firma de %q no verificada por ninguna clave de confianza", pkg.Manifest.Pkgname)
+}
+
 func commitPlan(root string, d *db.DB, entries []resolve.Entry, force bool, stdout, stderr io.Writer) int {
 	for _, e := range entries {
 		src := e.Local
@@ -91,6 +111,10 @@ func commitPlan(root string, d *db.DB, entries []resolve.Entry, force bool, stdo
 		}
 		pkg, err := archive.Open(src)
 		if err != nil {
+			fmt.Fprintf(stderr, "yarmouth: %v\n", err)
+			return 1
+		}
+		if err := verifyPackageTrust(pkg, root); err != nil {
 			fmt.Fprintf(stderr, "yarmouth: %v\n", err)
 			return 1
 		}

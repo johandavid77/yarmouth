@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 type command struct {
 	name  string
@@ -57,6 +57,36 @@ var commands = []command{
 		short: "actualiza los paquetes instalados",
 		usage: "yarmouth upgrade -r <raiz> [paquete...]",
 		run:   runUpgrade,
+	},
+	{
+		name:  "keygen",
+		short: "genera un par de claves ed25519",
+		usage: "yarmouth keygen [-out <archivo>]",
+		run:   runKeygen,
+	},
+	{
+		name:  "key",
+		short: "administra claves de confianza (add/del/list)",
+		usage: "yarmouth key -r <raiz> <add|del|list> ...",
+		run:   runKeyCmd,
+	},
+	{
+		name:  "sign",
+		short: "firma un .yrm o un repodata",
+		usage: "yarmouth sign -k <clave> <paquete.yrm|repodata>",
+		run:   runSign,
+	},
+	{
+		name:  "query",
+		short: "detalles de un paquete instalado",
+		usage: "yarmouth query -r <raiz> [-f] <paquete>",
+		run:   runQuery,
+	},
+	{
+		name:  "check",
+		short: "verifica la integridad de lo instalado",
+		usage: "yarmouth check -r <raiz>",
+		run:   runCheck,
 	},
 	{
 		name:  "list",

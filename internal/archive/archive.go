@@ -3,6 +3,7 @@ package archive
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -20,6 +21,7 @@ import (
 )
 
 const ManifestPath = "yarmouth/manifest"
+const SigPath = "yarmouth/signature"
 
 const (
 	HookPreInstall  = "yarmouth/pre-install"
@@ -207,6 +209,7 @@ type Package struct {
 	Entries  []Entry
 	SHA256   string
 	Hooks    map[string][]byte
+	Sig      []byte
 	hashes   map[string]string
 }
 
@@ -242,6 +245,14 @@ func Open(path string) (*Package, error) {
 				return nil, fmt.Errorf("manifest invalido: %w", err)
 			}
 			pkg.Manifest = m
+			continue
+		}
+		if hdr.Name == SigPath {
+			var b bytes.Buffer
+			if _, err := io.Copy(&b, tr); err != nil {
+				return nil, err
+			}
+			pkg.Sig = b.Bytes()
 			continue
 		}
 		pkg.Entries = append(pkg.Entries, Entry{Name: hdr.Name, Size: hdr.Size, Mode: hdr.Mode, Typeflag: hdr.Typeflag, Linkname: hdr.Linkname})
@@ -289,7 +300,7 @@ func (p *Package) VerifyContent() error {
 		if err != nil {
 			return fmt.Errorf("verificacion: %w", err)
 		}
-		if hdr.Name == ManifestPath {
+		if hdr.Name == ManifestPath || hdr.Name == SigPath {
 			continue
 		}
 		if hdr.Typeflag != tar.TypeReg {
@@ -334,6 +345,134 @@ func (p *Package) IsHook(name string) bool {
 		return true
 	}
 	return false
+}
+
+func CanonicalString(m metadata.Manifest) string {
+	return fmt.Sprintf("yarmouth package signature v1\npkgname=%s\npkgver=%s\nbuildid=%s\narch=%s\ndatahash=%s\n",
+		m.Pkgname, m.Pkgver, m.BuildID, m.Arch, m.DataHash)
+}
+
+func (p *Package) VerifySig(pub ed25519.PublicKey) bool {
+	return ed25519.Verify(pub, []byte(CanonicalString(p.Manifest)), p.Sig)
+}
+
+// SignPackage reescribe path agregando la entrada de control yarmouth/signature:
+// firma ed25519 sobre CanonicalString(manifest). Todas las demas entradas se
+// conservan byte a byte; la firma queda fuera del datahash.
+func SignPackage(path string, priv ed25519.PrivateKey) error {
+	if pk, err := Open(path); err == nil && len(pk.Sig) > 0 {
+		return fmt.Errorf("el paquete ya esta firmado")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	zr, err := xz.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	raw, err := io.ReadAll(zr)
+	if err != nil {
+		return fmt.Errorf("paquete invalido: %w", err)
+	}
+	m, err := manifestFromTar(raw)
+	if err != nil {
+		return err
+	}
+	out := path + ".tmp-sign"
+	f, err := os.Create(out)
+	if err != nil {
+		return err
+	}
+	xw, err := xz.NewWriter(f)
+	if err != nil {
+		f.Close()
+		os.Remove(out)
+		return err
+	}
+	tw := tar.NewWriter(xw)
+
+	tr := tar.NewReader(bytes.NewReader(raw))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			closeWriters(tw, xw)
+			f.Close()
+			os.Remove(out)
+			return fmt.Errorf("paquete corrupto: %w", err)
+		}
+		if err := copyEntry(tw, hdr, tr); err != nil {
+			closeWriters(tw, xw)
+			f.Close()
+			os.Remove(out)
+			return err
+		}
+	}
+	sig := ed25519.Sign(priv, []byte(CanonicalString(m)))
+	sigHdr := &tar.Header{Name: SigPath, Mode: 0o644, Size: int64(len(sig)), Typeflag: tar.TypeReg, Uid: 0, Gid: 0, ModTime: time.Unix(0, 0)}
+	if err := tw.WriteHeader(sigHdr); err != nil {
+		closeWriters(tw, xw)
+		f.Close()
+		os.Remove(out)
+		return err
+	}
+	if _, err := tw.Write(sig); err != nil {
+		closeWriters(tw, xw)
+		f.Close()
+		os.Remove(out)
+		return err
+	}
+	if err := tw.Close(); err != nil {
+		f.Close()
+		os.Remove(out)
+		return err
+	}
+	if err := xw.Close(); err != nil {
+		f.Close()
+		os.Remove(out)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(out)
+		return err
+	}
+	return os.Rename(out, path)
+}
+
+func manifestFromTar(raw []byte) (metadata.Manifest, error) {
+	tr := tar.NewReader(bytes.NewReader(raw))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return metadata.Manifest{}, errors.New("falta el manifest en el paquete")
+		}
+		if err != nil {
+			return metadata.Manifest{}, fmt.Errorf("paquete corrupto: %w", err)
+		}
+		if hdr.Name == ManifestPath {
+			var b bytes.Buffer
+			if _, err := io.Copy(&b, tr); err != nil {
+				return metadata.Manifest{}, err
+			}
+			return metadata.Read(&b)
+		}
+	}
+}
+
+func copyEntry(tw *tar.Writer, hdr *tar.Header, tr *tar.Reader) error {
+	cp := *hdr
+	if err := tw.WriteHeader(&cp); err != nil {
+		return err
+	}
+	if hdr.Typeflag == tar.TypeReg {
+		if _, err := io.Copy(tw, tr); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func RootPath(root, name string) string {

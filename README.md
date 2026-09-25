@@ -21,10 +21,10 @@ sencillo y auditable.
 | 1 | Instalación/eliminación, base de datos `pkgdb.json`, hooks, `-r` (chroot) | ✅ |
 | 2 | Repositorios remotos, `sync`, instalación por nombre con verificación sha256 | ✅ |
 | 3 | Resolución de dependencias, `upgrade`, `world` / `auto` | ✅ |
-| 4 | Firma/verificación de paquetes, `query` | ⏳ siguiente |
-| 5 | Recetas de construcción (bash → YAML) | pendiente |
+| 4 | Firmas ed25519, verificación al instalar, `query` / `check` | ✅ |
+| 5 | Recetas de construcción (bash → YAML) | ⏳ siguiente |
 
-Versión actual: **0.3.0**.
+Versión actual: **0.4.0**.
 
 ## Requisitos
 
@@ -66,7 +66,40 @@ yarmouth remove -f -r /mnt/lfs x     # fuerza sobre dependientes
 
 # También se admite un .yrm local (resuelve sus dependencias de los repos)
 yarmouth install -r /mnt/lfs ./app-1.0-1.x86_64.yrm
+
+yarmouth query -r /mnt/lfs app     # detalles de un paquete instalado
+yarmouth check -r /mnt/lfs         # verifica la integridad de lo instalado
 ```
+
+## Firmas ed25519
+
+Flujo del publicador:
+
+```sh
+yarmouth keygen -out mantenedor.key          # imprime la clave publica en hex
+yarmouth sign -k mantenedor.key app-1.0-1.x86_64.yrm   # firma embebida en el .yrm
+yarmouth index -dir repo -out repo/repodata
+yarmouth sign -k mantenedor.key repo/repodata          # crea repodata.sig
+```
+
+El cliente declara la confianza por repositorio:
+
+```sh
+yarmouth key -r /mnt/lfs add <PUB>
+yarmouth repo -r /mnt/lfs add -k <PUB> main https://...
+yarmouth sync -r /mnt/lfs   # exige y verifica repodata.sig
+```
+
+- La firma de paquete es un **ed25519 sobre la cadena canónica**
+  (pkgname + pkgver + buildid + arch + datahash) embebida como entrada de
+  control `yarmouth/signature`, fuera del `datahash`.
+- Si hay claves de confianza en `<raiz>/etc/yarmouth/trusted-keys`, `install`
+  **rechaza** cualquier paquete sin firmar o no verificable por esas claves
+  (`keygen` imprime la pública; `key add/del/list` administra el keyring).
+- `sync` solo popula la caché si el `repodata.sig` verifica contra la clave
+  del repositorio; un tiempo de espera con servidor comprometido se detecta.
+- `yarmouth check -r <raiz>` verifica los sha256 de todos los archivos
+  instalados contra el inventario (detecta manipulación en disco).
 
 `-r <raiz>` indica el directorio raíz (chroot). Por defecto es `/`. Las
 instalaciones jamás tocan la máquina de desarrollo: diríjanse al root de LFS.
@@ -150,12 +183,14 @@ como `auto` las dependencias nuevas.
 ## Estructura del código
 
 ```
-cmd/yarmouth/        CLI: build, index, repo, sync, install, remove, list, upgrade
+cmd/yarmouth/        CLI: build, index, repo, sync, install, remove, list, upgrade,
+                     keygen, key, sign, query, check
 internal/archive/    formato .yrm (crear/abrir/verificar/extraer, reproducible)
 internal/metadata/   manifiesto INI estricto
 internal/version/    comparación de versiones estilo Debian
 internal/repo/       índice repodata y repositorios remotos (sync/resolver/descargar)
 internal/resolve/    plan de instalación: dependencias, ciclos, upgrade
+internal/sig/        claves ed25519 y keyring de confianza (trusted-keys)
 internal/db/         inventario pkgdb.json
 internal/install/    instalación/eliminación con hooks, rollback y autoremove
 examples/hellopkg/   paquete de ejemplo con hooks de instalación/eliminación
@@ -163,7 +198,6 @@ examples/hellopkg/   paquete de ejemplo con hooks de instalación/eliminación
 
 ## Roadmap
 
-- **Fase 4** — firmas (p. ej. ed25519), verificación al instalar y `query`.
 - **Fase 5** — recetas de construcción del paquete desde el código fuente.
 
 ## Licencia

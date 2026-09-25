@@ -2,6 +2,7 @@ package repo
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -23,6 +24,7 @@ const UserAgent = "yarmouth"
 type Remote struct {
 	Alias string
 	URL   string
+	Key   string // clave publica ed25519 en hex (vacia = repositorio sin firmar)
 }
 
 func rootPath(root, name string) string {
@@ -54,11 +56,15 @@ func ReadRepos(root string) ([]Remote, error) {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) < 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
 			return nil, fmt.Errorf("linea invalida en repos.conf: %q", trimmed)
 		}
-		remotes = append(remotes, Remote{Alias: strings.TrimSpace(parts[0]), URL: strings.TrimSpace(parts[1])})
+		key := ""
+		if len(parts) == 3 {
+			key = strings.TrimSpace(parts[2])
+		}
+		remotes = append(remotes, Remote{Alias: strings.TrimSpace(parts[0]), URL: strings.TrimSpace(parts[1]), Key: key})
 	}
 	return remotes, nil
 }
@@ -66,7 +72,11 @@ func ReadRepos(root string) ([]Remote, error) {
 func WriteRepos(root string, remotes []Remote) error {
 	var b strings.Builder
 	for _, r := range remotes {
-		fmt.Fprintf(&b, "%s\t%s\n", r.Alias, r.URL)
+		fmt.Fprintf(&b, "%s\t%s", r.Alias, r.URL)
+		if r.Key != "" {
+			fmt.Fprintf(&b, "\t%s", r.Key)
+		}
+		b.WriteByte('\n')
 	}
 	if b.Len() == 0 {
 		b.WriteByte('\n')
@@ -81,7 +91,7 @@ func WriteRepos(root string, remotes []Remote) error {
 	return os.Rename(tmp, ReposPath(root))
 }
 
-func AddRepo(root, alias, url string) error {
+func AddRepo(root, alias, url string, key ...string) error {
 	if alias == "" || url == "" {
 		return errors.New("se requieren alias y url")
 	}
@@ -94,7 +104,11 @@ func AddRepo(root, alias, url string) error {
 			return fmt.Errorf("el repositorio %q ya existe", alias)
 		}
 	}
-	return WriteRepos(root, append(remotes, Remote{Alias: alias, URL: url}))
+	r := Remote{Alias: alias, URL: url}
+	if len(key) > 0 {
+		r.Key = key[0]
+	}
+	return WriteRepos(root, append(remotes, r))
 }
 
 func RemoveRepo(root, alias string) error {
@@ -125,6 +139,7 @@ func joinURL(base, name string) string {
 }
 
 func (r Remote) IndexURL() string           { return joinURL(r.URL, "repodata") }
+func (r Remote) SigURL() string             { return joinURL(r.URL, "repodata.sig") }
 func (r Remote) PackageURL(f string) string { return joinURL(r.URL, f) }
 
 func FetchBytes(target string) ([]byte, error) {
@@ -181,11 +196,45 @@ func Sync(root string) ([]Remote, error) {
 		if _, err := ReadIndex(bytes.NewReader(b)); err != nil {
 			return nil, fmt.Errorf("repo %q: repodata invalido: %w", r.Alias, err)
 		}
+		if r.Key != "" {
+			sigData, err := FetchBytes(r.SigURL())
+			if err != nil {
+				return nil, fmt.Errorf("repo %q esta firmado: %w", r.Alias, err)
+			}
+			pub, err := parsePublic(r.Key)
+			if err != nil {
+				return nil, fmt.Errorf("repo %q: %w", r.Alias, err)
+			}
+			if !ed25519.Verify(pub, b, sigData) {
+				return nil, fmt.Errorf("repo %q: firma de repodata invalida (la clave de confianza no la verifica)", r.Alias)
+			}
+		}
 		if err := os.WriteFile(CacheIndex(root, r.Alias), b, 0o644); err != nil {
 			return nil, err
 		}
 	}
 	return remotes, nil
+}
+
+// SignIndex firma el contenido de path (repodata) y escribe path+".sig".
+func SignIndex(path string, priv ed25519.PrivateKey) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path+".sig", ed25519.Sign(priv, data), 0o644)
+}
+
+func parsePublic(s string) (ed25519.PublicKey, error) {
+	raw := strings.TrimSpace(s)
+	b, err := hex.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("clave publica invalida: %w", err)
+	}
+	if len(b) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("clave publica: esperaba %d bytes, hay %d", ed25519.PublicKeySize, len(b))
+	}
+	return ed25519.PublicKey(b), nil
 }
 
 type Match struct {
