@@ -1,0 +1,2 @@
+#!/bin/sh
+echo "ejecutando hook post-remove de hello"

@@ -1,0 +1,11 @@
+# manifest para el paquete de ejemplo
+
+pkgname = hello
+pkgver = 0.1.0
+buildid = 1
+arch = x86_64
+description = Programa de demostracion para Yarmouth
+license = MIT
+homepage = https://github.com/tu-usuario/yarmouth
+maintainer = johan <johan@local>
+depends = glibc
