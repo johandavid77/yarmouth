@@ -6,6 +6,6 @@ buildid = 1
 arch = x86_64
 description = Programa de demostracion para Yarmouth
 license = MIT
-homepage = https://github.com/tu-usuario/yarmouth
+homepage = https://github.com/johandavid77/yarmouth
 maintainer = johan <johan@local>
 depends = glibc

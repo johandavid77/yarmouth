@@ -10,6 +10,9 @@ en construcción como en un sistema arrancado.
 Inspirado en `dnf`, `xbps` y `pkg`; diseñado para un solo usuario, sin `systemd`,
 sencillo y auditable.
 
+> El nombre honra al SS _Yarmouth_, el primer barco de la **Black Star Line** de
+> Marcus Garvey: lo que "embarca" los paquetes y los "descarga" en tu LFS.
+
 ## Estado
 
 | Fase | Contenido | Estado |
