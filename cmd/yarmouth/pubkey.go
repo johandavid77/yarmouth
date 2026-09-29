@@ -30,3 +30,13 @@ func runPubkey(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, sig.PublicHex(priv))
 	return 0
 }
+
+func init() {
+	commands = append(commands, command{
+		name:    "pubkey",
+		short:   "imprime la clave publica de una clave privada",
+		usage:   "yarmouth pubkey <clave-privada>",
+		details: "lee la clave privada (hex) generada por keygen e imprime su clave publica en hex, la que se distribuye con repo add -k y key add.",
+		run:     runPubkey,
+	})
+}

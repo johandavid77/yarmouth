@@ -70,7 +70,7 @@ var commands = []command{
 		name:    "keygen",
 		short:   "genera un par de claves ed25519",
 		usage:   "yarmouth keygen -out <archivo>",
-		details: "genera un par de claves ed25519 y escribe la privada (hex) en -out. La clave publica se obtiene con keygen -pub o pubkey; es la que se distribuye para repo add -k y key add.",
+		details: "genera un par de claves ed25519 y escribe la privada (hex) en -out. La clave publica se obtiene con yarmouth pubkey <archivo>; es la que se distribuye para repo add -k y key add.",
 		run:     runKeygen,
 	},
 	{
