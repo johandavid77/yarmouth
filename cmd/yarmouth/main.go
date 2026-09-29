@@ -28,7 +28,7 @@ var commands = []command{
 		name:    "index",
 		short:   "crea el indice repodata de un directorio",
 		usage:   "yarmouth index -dir <dir> -out <repodata>",
-		details: "escanea -dir en busca de paquetes .yrm y genera el indice repodata -out. Ese indice es el que npm publica como repositorio; luego se firma con sign -k (y se publica repodata.sig).",
+		details: "escanea -dir en busca de paquetes .yrm y genera el indice repodata -out. Ese indice es el que se publica como repositorio; luego se firma con sign -k (y se publica repodata.sig).",
 		run:     runIndex,
 	},
 	{
