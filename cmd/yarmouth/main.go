@@ -152,8 +152,7 @@ func printUsage(w io.Writer) {
 	for _, c := range commands {
 		fmt.Fprintf(w, "  %-9s %s\n", c.name, c.short)
 	}
-	fmt.Fprintf(w, "  %-9s %s\n", "help", "muestra ayuda (yarmouth help <comando>)")
-	fmt.Fprintf(w, "  %-9s %s\n\nOpciones globales:\n  -h, --help    muestra esta ayuda\n  -V, --version muestra la version\n", "help", "ayuda general")
+	fmt.Fprintf(w, "\nOpciones globales:\n  -h, --help    muestra esta ayuda\n  -V, --version muestra la version\n")
 }
 
 func printCmdHelp(w io.Writer, name string) {

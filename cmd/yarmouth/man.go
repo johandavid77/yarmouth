@@ -13,15 +13,6 @@ import (
 // commands -> runMan -> commands). Con init() el cuerpo queda fuera del grafo
 // y man sigue apareciendo en -h, help y man(1) con la misma fuente unica.
 
-func init() {
-	commands = append(commands, command{
-		name:    "man",
-		short:   "genera las paginas de manual en roff",
-		usage:   "yarmouth man [1|5]",
-		details: "genera las paginas de manual a partir de la misma tabla que alimenta -h y help: resumen, sintaxis y detalles de cada comando nunca pueden desincronizarse. yarmouth man 1 produce yarmouth.1 (todos los comandos); yarmouth man 5 produce yarmouth.conf.5 (formatos de repos.conf, trusted-keys, repodata, .yrm, recetas .yarmouth y pkgdb.json). Para instalar: yarmouth man 1 > /usr/share/man/man1/yarmouth.1 y yarmouth man 5 > /usr/share/man/man5/yarmouth.conf.5.",
-		run:     runMan,
-	})
-}
 
 // man produce las paginas de manual en roff a partir de la misma tabla que
 // alimenta -h y help: el resumen, la sintaxis y los detalles de cada comando

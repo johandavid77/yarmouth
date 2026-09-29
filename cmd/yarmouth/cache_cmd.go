@@ -12,15 +12,6 @@ import (
 	"yarmouth/internal/repo"
 )
 
-func init() {
-	commands = append(commands, command{
-		name:    "cache",
-		short:   "gestiona la cache local de .yrm (export/import/list)",
-		usage:   "yarmouth cache -r <raiz> <export|import|list> ...",
-		details: "opera sobre la cache de paquetes descargados (raiz/var/cache/yarmouth) de forma segura y auditable: NUNCA se copia un .yrm hacia fuera (export) o hacia dentro (import) sin que su sha256 este certificado por un indice firmado local (sync/verify). import solo acepta .yrm cuyo sha256 coincida con un indice sincronizado y firmado; un .yrm huerfano o alterado se rechaza y se reporta. list muestra la cache actual con su sha256 verificado.",
-		run:     runCacheCmd,
-	})
-}
 
 func runCacheCmd(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("cache", flag.ContinueOnError)
